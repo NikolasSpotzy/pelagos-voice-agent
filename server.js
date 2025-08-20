@@ -139,7 +139,8 @@ function resampleLinearPCM16(input, inRate, outRate) {
 // CORRECT WebSocket handler with audio conversion
 fastify.get('/media-stream', { websocket: true }, (socket, req) => {
   console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
-  console.log('🌐 Connection from:', req.socket.remoteAddress);
+  console.log('🌐 Connection from:', req.ip || req.hostname || 'unknown');
+
 
   // 1) Attach listeners SYNCHRONOUSLY
   socket.on('message', onTelnyxMessage);
