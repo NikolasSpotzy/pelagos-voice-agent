@@ -1,5 +1,5 @@
-// Pelagos Voice Agent - Πλήρως Διορθωμένη έκδοση για LocalTunnel
-// Αντικαταστήστε ΟΛΟΚΛΗΡΟ τον server.js με αυτόν τον κώδικα
+// Pelagos Voice Agent - PRODUCTION VERSION για Render
+// Διορθωμένη έκδοση με σωστό production URL
 
 require('dotenv').config();
 const fastify = require('fastify')({ logger: true });
@@ -11,10 +11,11 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TELNYX_API_KEY = process.env.TELNYX_API_KEY;
 const OPENAI_REALTIME_PROMPT_ID = process.env.OPENAI_REALTIME_PROMPT_ID;
 
-// ΔΙΟΡΘΩΣΗ: LocalTunnel URL για WebSocket
-const NGROK_URL = 'https://red-oranges-matter.loca.lt';
+// ΔΙΟΡΘΩΣΗ: Production URL αντί για local development
+const BASE_URL = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || 'https://pelagos-voice-agent.onrender.com';
 
 console.log('🔧 Ξεκινάω τον Pelagos Voice Agent...');
+console.log('🌐 Production URL:', BASE_URL);
 
 // Έλεγχος API Keys
 if (!OPENAI_API_KEY) {
@@ -73,7 +74,7 @@ const RESTAURANT_FUNCTIONS = [
   }
 ];
 
-// Βασικό endpoint για έλεγχο
+// Βασικό endpoint για έλεγχος
 fastify.get('/', async (request, reply) => {
   return {
     message: '🍽️ Pelagos Voice Agent with OpenAI Realtime API',
@@ -81,8 +82,8 @@ fastify.get('/', async (request, reply) => {
     timestamp: new Date().toISOString(),
     ready_for_calls: true,
     openai_realtime: 'enabled',
-    tunnel_url: NGROK_URL,
-    version: '2.2-localtunnel-fixed'
+    production_url: BASE_URL,
+    version: '2.3-production'
   };
 });
 
@@ -95,8 +96,9 @@ fastify.get('/health', async (request, reply) => {
     telnyx_key: TELNYX_API_KEY ? '✅ Connected' : '❌ Missing',
     realtime_prompt: OPENAI_REALTIME_PROMPT_ID ? '✅ Configured' : '❌ Missing',
     active_calls: activeCalls.size,
-    tunnel_url: NGROK_URL,
-    version: '2.2-localtunnel-fixed'
+    production_url: BASE_URL,
+    media_stream_url: `${BASE_URL.replace('https://', 'wss://')}/media-stream`,
+    version: '2.3-production'
   };
 });
 
@@ -182,6 +184,11 @@ fastify.post('/telnyx-webhook', async (request, reply) => {
         console.log('📞 Media streaming σταμάτησε:', payload.call_control_id);
         break;
 
+      case 'streaming.failed':
+        console.log('❌ Media streaming απέτυχε:', payload.call_control_id);
+        console.log('❌ Failure reason:', payload.failure_reason);
+        break;
+
       default:
         console.log('📞 Άλλο event:', event_type);
     }
@@ -240,8 +247,8 @@ async function startAudioSession(payload) {
   console.log('🎵 Έναρξη audio session με OpenAI για κλήση:', call_control_id);
 
   try {
-    // ΔΙΟΡΘΩΣΗ: Χρήση του σωστού LocalTunnel WebSocket URL
-    const streamUrl = `${NGROK_URL.replace('https://', 'wss://')}/media-stream`;
+    // ΔΙΟΡΘΩΣΗ: Χρήση του production WebSocket URL
+    const streamUrl = `${BASE_URL.replace('https://', 'wss://')}/media-stream`;
     
     console.log('🎵 Stream URL:', streamUrl);
 
@@ -281,6 +288,7 @@ async function startAudioSession(payload) {
 fastify.register(async function (fastify) {
   fastify.get('/media-stream', { websocket: true }, (connection, req) => {
     console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
+    console.log('🌐 Connection from:', req.socket.remoteAddress);
     
     let openaiWS = null;
     
@@ -463,8 +471,8 @@ const start = async () => {
     console.log(`🚀 Server ξεκίνησε στο http://localhost:${PORT}`);
     console.log(`🏥 Health check: http://localhost:${PORT}/health`);
     console.log(`🧪 Test OpenAI: http://localhost:${PORT}/test-openai`);
-    console.log(`📞 Telnyx Webhook: ${NGROK_URL}/telnyx-webhook`);
-    console.log(`🎵 Media Stream: ${NGROK_URL.replace('https://', 'wss://')}/media-stream`);
+    console.log(`📞 Telnyx Webhook: ${BASE_URL}/telnyx-webhook`);
+    console.log(`🎵 Media Stream: ${BASE_URL.replace('https://', 'wss://')}/media-stream`);
     console.log('🎉 PELAGOS VOICE AGENT ΜΕ OPENAI REALTIME API ΞΕΚΙΝΗΣΕ! 🎉');
     console.log('🍽️ Έτοιμος για ελληνικές κλήσεις! 🇬🇷');
   } catch (err) {
