@@ -1,482 +1,280 @@
-// Pelagos Voice Agent - PRODUCTION VERSION για Render
-// Διορθωμένη έκδοση με σωστό production URL
-
 require('dotenv').config();
-const fastify = require('fastify')({ logger: true });
+const Fastify = require('fastify');
 const WebSocket = require('ws');
 
-// Configuration
 const PORT = process.env.PORT || 3001;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const TELNYX_API_KEY = process.env.TELNYX_API_KEY;
-const OPENAI_REALTIME_PROMPT_ID = process.env.OPENAI_REALTIME_PROMPT_ID;
+const HOST = '0.0.0.0';
 
-// ΔΙΟΡΘΩΣΗ: Production URL αντί για local development
-const BASE_URL = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || 'https://pelagos-voice-agent.onrender.com';
+const fastify = Fastify({ 
+  logger: true,
+  trustProxy: true 
+});
 
-console.log('🔧 Ξεκινάω τον Pelagos Voice Agent...');
-console.log('🌐 Production URL:', BASE_URL);
-
-// Έλεγχος API Keys
-if (!OPENAI_API_KEY) {
-  console.error('❌ Λείπει το OPENAI_API_KEY στο .env αρχείο');
-  process.exit(1);
-}
-
-if (!TELNYX_API_KEY) {
-  console.error('❌ Λείπει το TELNYX_API_KEY στο .env αρχείο');
-  process.exit(1);
-}
-
-if (!OPENAI_REALTIME_PROMPT_ID) {
-  console.error('❌ Λείπει το OPENAI_REALTIME_PROMPT_ID στο .env αρχείο');
-  process.exit(1);
-}
-
-// Εγγραφή WebSocket plugin
+// Register WebSocket support
 fastify.register(require('@fastify/websocket'));
 
-console.log('✅ API keys loaded successfully');
-console.log('✅ Ξεκινάω τον Pelagos Voice Agent με OpenAI Realtime API...');
-
-// Store active calls
-const activeCalls = new Map();
-
-// Restaurant functions που θα στείλουμε στο OpenAI
-const RESTAURANT_FUNCTIONS = [
-  {
-    name: "checkAvailability",
-    description: "Έλεγχος διαθεσιμότητας τραπεζιών στο εστιατόριο Πέλαγος",
-    parameters: {
-      type: "object",
-      properties: {
-        date: { type: "string", description: "Ημερομηνία κράτησης (YYYY-MM-DD)" },
-        time: { type: "string", description: "Ώρα κράτησης (HH:MM)" },
-        guests: { type: "integer", description: "Αριθμός ατόμων" }
-      },
-      required: ["date", "time", "guests"]
-    }
-  },
-  {
-    name: "createReservation", 
-    description: "Δημιουργία κράτησης στο εστιατόριο Πέλαγος",
-    parameters: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Όνομα πελάτη" },
-        phone: { type: "string", description: "Τηλέφωνο πελάτη" },
-        date: { type: "string", description: "Ημερομηνία κράτησης" },
-        time: { type: "string", description: "Ώρα κράτησης" },
-        guests: { type: "integer", description: "Αριθμός ατόμων" }
-      },
-      required: ["name", "phone", "date", "time", "guests"]
-    }
-  }
-];
-
-// Βασικό endpoint για έλεγχος
-fastify.get('/', async (request, reply) => {
-  return {
-    message: '🍽️ Pelagos Voice Agent with OpenAI Realtime API',
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    ready_for_calls: true,
-    openai_realtime: 'enabled',
-    production_url: BASE_URL,
-    version: '2.3-production'
-  };
+// CORS and basic routes
+fastify.addHook('onRequest', async (request, reply) => {
+  reply.header('Access-Control-Allow-Origin', '*');
+  reply.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
 });
 
-// Health check endpoint
 fastify.get('/health', async (request, reply) => {
-  return {
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    openai_key: OPENAI_API_KEY ? '✅ Connected' : '❌ Missing',
-    telnyx_key: TELNYX_API_KEY ? '✅ Connected' : '❌ Missing',
-    realtime_prompt: OPENAI_REALTIME_PROMPT_ID ? '✅ Configured' : '❌ Missing',
-    active_calls: activeCalls.size,
-    production_url: BASE_URL,
-    media_stream_url: `${BASE_URL.replace('https://', 'wss://')}/media-stream`,
-    version: '2.3-production'
+  return { status: 'ok', timestamp: new Date().toISOString() };
+});
+
+fastify.get('/', async (request, reply) => {
+  return { 
+    message: 'Spotzy AI Voice Agent Server',
+    status: 'running',
+    environment: 'Render',
+    timestamp: new Date().toISOString()
   };
 });
 
-// Test OpenAI Realtime connection
-fastify.get('/test-openai', async (request, reply) => {
-  console.log('🧪 Testing OpenAI Realtime API connection...');
-  
-  try {
-    const testWS = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'realtime=v1'
-      }
-    });
-
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        testWS.close();
-        reject(new Error('Connection timeout'));
-      }, 10000);
-
-      testWS.on('open', () => {
-        clearTimeout(timeout);
-        console.log('✅ OpenAI Realtime API connection successful!');
-        testWS.close();
-        resolve({
-          status: 'success',
-          message: 'OpenAI Realtime API accessible',
-          timestamp: new Date().toISOString()
-        });
-      });
-
-      testWS.on('error', (error) => {
-        clearTimeout(timeout);
-        console.error('❌ OpenAI Realtime API connection failed:', error.message);
-        reject(error);
-      });
-    });
-  } catch (error) {
-    console.error('❌ OpenAI test failed:', error.message);
-    return reply.code(500).send({
-      status: 'error',
-      message: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Telnyx webhook για incoming calls
+// Telnyx webhook endpoint
 fastify.post('/telnyx-webhook', async (request, reply) => {
-  console.log('📞 Incoming Telnyx webhook:', JSON.stringify(request.body, null, 2));
-  
   const { data } = request.body;
   
-  if (!data) {
-    return reply.code(200).send({ status: 'ok' });
-  }
-
-  const { event_type, payload } = data;
-
-  try {
-    switch (event_type) {
-      case 'call.initiated':
-        console.log('📞 Νέα εισερχόμενη κλήση:', payload.call_control_id);
-        await handleIncomingCall(payload);
-        break;
-
-      case 'call.answered':
-        console.log('📞 Κλήση απαντήθηκε:', payload.call_control_id);
-        await startAudioSession(payload);
-        break;
-
-      case 'call.hangup':
-        console.log('📞 Κλήση τερματίστηκε:', payload.call_control_id);
-        await cleanup(payload.call_control_id);
-        break;
-
-      case 'call.streaming.started':
-        console.log('📞 Media streaming ξεκίνησε:', payload.call_control_id);
-        break;
-
-      case 'call.streaming.stopped':
-        console.log('📞 Media streaming σταμάτησε:', payload.call_control_id);
-        break;
-
-      case 'streaming.failed':
-        console.log('❌ Media streaming απέτυχε:', payload.call_control_id);
-        console.log('❌ Failure reason:', payload.failure_reason);
-        break;
-
-      default:
-        console.log('📞 Άλλο event:', event_type);
-    }
-  } catch (error) {
-    console.error('❌ Σφάλμα στον Telnyx webhook handler:', error);
-  }
-
-  return reply.code(200).send({ status: 'ok' });
-});
-
-// Function για χειρισμό εισερχόμενων κλήσεων
-async function handleIncomingCall(payload) {
-  const { call_control_id, from, to } = payload;
+  console.log('📞 Incoming Telnyx webhook:', JSON.stringify(data, null, 2));
   
-  console.log(`📞 Απάντηση σε κλήση από ${from} προς ${to}`);
-
-  try {
-    // Answer the call
-    const answerResponse = await fetch('https://api.telnyx.com/v2/calls/' + call_control_id + '/actions/answer', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${TELNYX_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (answerResponse.ok) {
-      console.log('✅ Κλήση απαντήθηκε επιτυχώς');
-      
-      // Store call info
-      activeCalls.set(call_control_id, {
-        from,
-        to,
-        startTime: new Date(),
-        status: 'answered'
-      });
-
-      // Σύντομη παύση πριν ξεκινήσει το streaming
-      setTimeout(() => {
-        startAudioSession(payload);
-      }, 1000);
-      
-    } else {
-      const errorText = await answerResponse.text();
-      console.error('❌ Αποτυχία απάντησης κλήσης:', errorText);
-    }
-  } catch (error) {
-    console.error('❌ Σφάλμα κατά την απάντηση της κλήσης:', error);
-  }
-}
-
-// Function για έναρξη audio session με OpenAI
-async function startAudioSession(payload) {
-  const { call_control_id } = payload;
-  
-  console.log('🎵 Έναρξη audio session με OpenAI για κλήση:', call_control_id);
-
-  try {
-    // ΔΙΟΡΘΩΣΗ: Χρήση του production WebSocket URL
-    const streamUrl = `${BASE_URL.replace('https://', 'wss://')}/media-stream`;
-    
-    console.log('🎵 Stream URL:', streamUrl);
-
-    // Start media streaming με διορθωμένο stream_track
-    const mediaResponse = await fetch(`https://api.telnyx.com/v2/calls/${call_control_id}/actions/streaming_start`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${TELNYX_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        stream_url: streamUrl,
-        stream_track: 'both_tracks',
-        enable_dialogflow_enhanced: false
-      })
-    });
-
-    if (mediaResponse.ok) {
-      console.log('✅ Media streaming ξεκίνησε επιτυχώς');
-      
-      // Ενημέρωση call status
-      const callInfo = activeCalls.get(call_control_id);
-      if (callInfo) {
-        callInfo.status = 'streaming';
-        callInfo.streamStartTime = new Date();
-      }
-    } else {
-      const errorText = await mediaResponse.text();
-      console.error('❌ Αποτυχία έναρξης media streaming:', errorText);
-    }
-  } catch (error) {
-    console.error('❌ Σφάλμα κατά την έναρξη audio session:', error);
-  }
-}
-
-// WebSocket για media streaming
-fastify.register(async function (fastify) {
-  fastify.get('/media-stream', { websocket: true }, (connection, req) => {
-    console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
-    console.log('🌐 Connection from:', req.socket.remoteAddress);
-    
-    let openaiWS = null;
+  if (data.event_type === 'call.initiated') {
+    console.log('📞 Νέα εισερχόμενη κλήση:', data.payload.call_control_id);
+    console.log('📞 Απάντηση σε κλήση από', data.payload.from, 'προς', data.payload.to);
     
     try {
-      // Connect to OpenAI Realtime API
-      openaiWS = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
+      // Answer the call
+      const response = await fetch(`https://api.telnyx.com/v2/calls/${data.payload.call_control_id}/actions/answer`, {
+        method: 'POST',
         headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'OpenAI-Beta': 'realtime=v1'
+          'Authorization': `Bearer ${process.env.TELNYX_API_KEY}`,
+          'Content-Type': 'application/json'
         }
       });
-
-      openaiWS.on('open', () => {
-        console.log('🤖 Συνδέθηκε στο OpenAI Realtime API');
-        
-        // Configure session με το prompt σου
-        const sessionConfig = {
-          type: 'session.update',
-          session: {
-            modalities: ['text', 'audio'],
-            instructions: `Είσαι η Μαρία, η εξυπηρετική AI hostess του εστιατορίου Πέλαγος στη Λεμεσό, Κύπρος. 
-            Μιλάς άψογα ελληνικά και βοηθάς τους πελάτες με:
-            - Κρατήσεις τραπεζιών
-            - Πληροφορίες για το μενού
-            - Ώρες λειτουργίας (Τρίτη-Κυριακή 6μ.μ.-12π.μ., κλειστά Δευτέρες)
-            - Ακύρωση κρατήσεων
-            
-            Είσαι φιλική, επαγγελματική και πρόθυμη να βοηθήσεις. Χαιρέτα τους πελάτες και ρώτα πώς μπορείς να βοηθήσεις.`,
-            voice: 'alloy',
-            input_audio_format: 'g711_ulaw',
-            output_audio_format: 'g711_ulaw',
-            input_audio_transcription: {
-              model: 'whisper-1'
-            },
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 500
-            },
-            tools: RESTAURANT_FUNCTIONS,
-            tool_choice: 'auto'
-          }
-        };
-        
-        openaiWS.send(JSON.stringify(sessionConfig));
-        
-        // Send initial greeting
-        setTimeout(() => {
-          const responseConfig = {
-            type: 'response.create',
-            response: {
-              modalities: ['audio'],
-              instructions: 'Χαιρέτα τον πελάτη στα ελληνικά και πες ότι είσαι η Μαρία από το εστιατόριο Πέλαγος.'
-            }
-          };
-          openaiWS.send(JSON.stringify(responseConfig));
-        }, 1000);
-      });
-
-      // Proxy messages between Telnyx and OpenAI
-      connection.socket.on('message', (message) => {
-        try {
-          const data = JSON.parse(message);
-          
-          if (data.event === 'media' && data.media && data.media.payload) {
-            // Convert from base64 to binary for OpenAI
-            const audioData = Buffer.from(data.media.payload, 'base64');
-            
-            // Forward audio to OpenAI
-            const audioEvent = {
-              type: 'input_audio_buffer.append',
-              audio: audioData.toString('base64')
-            };
-            
-            if (openaiWS && openaiWS.readyState === WebSocket.OPEN) {
-              openaiWS.send(JSON.stringify(audioEvent));
-            }
-          }
-          
-          if (data.event === 'start') {
-            console.log('🎵 Media stream ξεκίνησε από Telnyx');
-          }
-          
-        } catch (error) {
-          console.error('❌ Error processing Telnyx message:', error);
-        }
-      });
-
-      openaiWS.on('message', (message) => {
-        try {
-          const event = JSON.parse(message);
-          
-          if (event.type === 'response.audio.delta' && event.delta) {
-            // Forward audio back to Telnyx
-            const mediaMessage = {
-              event: 'media',
-              streamSid: 'stream_' + Date.now(),
-              media: {
-                payload: event.delta
-              }
-            };
-            
-            if (connection.socket.readyState === WebSocket.OPEN) {
-              connection.socket.send(JSON.stringify(mediaMessage));
-            }
-          }
-          
-          if (event.type === 'session.created') {
-            console.log('🤖 OpenAI session created successfully');
-          }
-          
-          if (event.type === 'response.audio_transcript.done') {
-            console.log('🤖 OpenAI response:', event.transcript);
-          }
-          
-        } catch (error) {
-          console.error('❌ Error processing OpenAI message:', error);
-        }
-      });
-
-      connection.socket.on('close', () => {
-        console.log('🔌 Telnyx WebSocket connection closed');
-        if (openaiWS) {
-          openaiWS.close();
-        }
-      });
-
-      openaiWS.on('close', () => {
-        console.log('🤖 OpenAI connection closed');
-        if (connection.socket.readyState === WebSocket.OPEN) {
-          connection.socket.close();
-        }
-      });
-
-      openaiWS.on('error', (error) => {
-        console.error('❌ OpenAI WebSocket error:', error);
-      });
-
-    } catch (error) {
-      console.error('❌ Error setting up WebSocket connections:', error);
-      if (connection.socket.readyState === WebSocket.OPEN) {
-        connection.socket.close();
+      
+      if (response.ok) {
+        console.log('✅ Κλήση απαντήθηκε επιτυχώς');
       }
+    } catch (error) {
+      console.error('❌ Error answering call:', error);
     }
-  });
+    
+  } else if (data.event_type === 'call.answered') {
+    console.log('📞 Κλήση απαντήθηκε:', data.payload.call_control_id);
+    
+    // Start media streaming
+    setTimeout(async () => {
+      console.log('🎵 Έναρξη audio session με OpenAI για κλήση:', data.payload.call_control_id);
+      const streamUrl = `wss://${request.headers.host}/media-stream`;
+      console.log('🎵 Stream URL:', streamUrl);
+      
+      try {
+        const streamResponse = await fetch(`https://api.telnyx.com/v2/calls/${data.payload.call_control_id}/actions/streaming_start`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.TELNYX_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            stream_url: streamUrl,
+            stream_track: 'both_tracks'
+          })
+        });
+        
+        if (streamResponse.ok) {
+          console.log('✅ Media streaming ξεκίνησε επιτυχώς');
+        } else {
+          console.error('❌ Failed to start streaming:', await streamResponse.text());
+        }
+      } catch (error) {
+        console.error('❌ Error starting stream:', error);
+      }
+    }, 1000);
+    
+  } else if (data.event_type === 'streaming.failed') {
+    console.log('❌ Media streaming απέτυχε:', data.payload.call_control_id);
+    console.log('❌ Failure reason:', data.payload.failure_reason);
+  } else if (data.event_type === 'call.hangup') {
+    console.log('📞 Κλήση τερματίστηκε:', data.payload.call_control_id);
+  } else {
+    console.log('📞 Άλλο event:', data.event_type);
+  }
+  
+  reply.send({ received: true });
 });
 
-// Cleanup function
-async function cleanup(callControlId) {
-  activeCalls.delete(callControlId);
-  console.log('🧹 Cleanup για κλήση:', callControlId);
+// Audio conversion helpers
+function mulawToPCM16(mu) {
+  const out = Buffer.alloc(mu.length * 2);
+  for (let i = 0; i < mu.length; i++) {
+    let u = ~mu[i] & 0xFF;
+    let sign = (u & 0x80) ? -1 : 1;
+    let exponent = (u >> 4) & 0x07;
+    let mantissa = u & 0x0F;
+    let magnitude = ((mantissa << 1) + 1) << (exponent + 2);
+    let sample = sign * (magnitude - 33);
+    out.writeInt16LE(sample, i * 2);
+  }
+  return out;
 }
 
-// Restaurant function implementations
-function handleRestaurantFunction(functionName, parameters) {
-  switch (functionName) {
-    case 'checkAvailability':
-      return {
-        available: true,
-        message: `Διαθέσιμο τραπέζι για ${parameters.guests} άτομα στις ${parameters.time} την ${parameters.date}`
-      };
-    
-    case 'createReservation':
-      return {
-        success: true,
-        reservationId: 'RES' + Date.now(),
-        message: `Κράτηση επιβεβαιώθηκε για τον/την ${parameters.name}`
-      };
-    
-    default:
-      return { error: 'Unknown function' };
+function resampleLinearPCM16(input, inRate, outRate) {
+  if (inRate === outRate) return input;
+  const inSamples = input.length / 2;
+  const outSamples = Math.round(inSamples * outRate / inRate);
+  const out = Buffer.alloc(outSamples * 2);
+  for (let i = 0; i < outSamples; i++) {
+    const t = i * (inSamples - 1) / (outSamples - 1);
+    const i0 = Math.floor(t), i1 = Math.min(i0 + 1, inSamples - 1);
+    const frac = t - i0;
+    const s0 = input.readInt16LE(i0 * 2);
+    const s1 = input.readInt16LE(i1 * 2);
+    const s = (1 - frac) * s0 + frac * s1;
+    out.writeInt16LE(Math.max(-32768, Math.min(32767, s | 0)), i * 2);
   }
+  return out;
 }
+
+// CORRECT WebSocket handler with audio conversion
+fastify.get('/media-stream', { websocket: true }, (socket, req) => {
+  console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
+  console.log('🌐 Connection from:', req.socket.remoteAddress);
+
+  // 1) Attach listeners SYNCHRONOUSLY
+  socket.on('message', onTelnyxMessage);
+  socket.on('close', () => cleanup('telnyx closed'));
+  socket.on('error', (e) => console.error('❌ Telnyx WS error', e));
+
+  // 2) Keepalive to avoid idle drops
+  const ping = setInterval(() => { 
+    try { 
+      socket.ping(); 
+    } catch (e) {
+      console.log('Ping failed:', e.message);
+    }
+  }, 25000);
+
+  // 3) Connect to OpenAI Realtime
+  const oai = new WebSocket(
+    'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01',
+    { 
+      headers: { 
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'OpenAI-Beta': 'realtime=v1' 
+      } 
+    }
+  );
+
+  oai.on('open', () => {
+    console.log('🤖 Συνδέθηκε στο OpenAI Realtime API');
+    
+    // Configure session
+    oai.send(JSON.stringify({
+      type: 'session.update',
+      session: {
+        turn_detection: { type: 'server_vad' },
+        input_audio_format: 'pcm16',
+        input_audio_transcription: { model: 'whisper-1' },
+        output_audio_format: 'g711_ulaw',
+        modalities: ['audio', 'text'],
+        voice: 'alloy',
+        instructions: `Είσαι η Μαρία, η AI hostess του εστιατορίου Πέλαγος στη Λεμεσό. 
+        Μιλάς μόνο ελληνικά με φιλικό και επαγγελματικό τρόπο. 
+        Βοηθάς με κρατήσεις τραπεζιών και πληροφορίες για το εστιατόριο.
+        Χαιρέτα τους πελάτες και ρώτα πώς μπορείς να τους βοηθήσεις.`
+      }
+    }));
+  });
+
+  // OpenAI → Telnyx (audio out)  
+  let outBuffer = Buffer.alloc(0);
+  oai.on('message', (buf) => {
+    try {
+      const message = JSON.parse(buf.toString());
+      
+      if (message.type === 'response.audio.delta' && message.delta) {
+        // message.delta is base64 g711_ulaw
+        outBuffer = Buffer.concat([outBuffer, Buffer.from(message.delta, 'base64')]);
+        
+        // Send back to Telnyx in 20ms chunks (160 bytes for PCMU @ 8kHz)
+        while (outBuffer.length >= 160) {
+          const frame = outBuffer.subarray(0, 160);
+          outBuffer = outBuffer.subarray(160);
+          
+          if (socket.readyState === 1) { // WebSocket.OPEN
+            socket.send(JSON.stringify({ 
+              event: 'media', 
+              media: { 
+                payload: frame.toString('base64') 
+              } 
+            }));
+          }
+        }
+      }
+      
+      if (message.type === 'session.created') {
+        console.log('✅ OpenAI session created');
+      } else if (message.type === 'response.created') {
+        console.log('💬 OpenAI response started');
+      } else if (message.type === 'response.done') {
+        console.log('✅ OpenAI response completed');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error processing OpenAI message:', error);
+    }
+  });
+
+  oai.on('close', () => cleanup('oai closed'));
+  oai.on('error', (e) => console.error('❌ OpenAI WS error', e));
+
+  function cleanup(reason) {
+    clearInterval(ping);
+    try { socket.terminate(); } catch (e) {}
+    try { oai.terminate(); } catch (e) {}
+    console.log('🧹 Cleanup:', reason);
+  }
+
+  // Telnyx → OpenAI (audio in)
+  function onTelnyxMessage(data) {
+    try {
+      const msg = JSON.parse(data.toString());
+      
+      if (msg.event === 'start') {
+        console.log('🎬 Telnyx media stream started');
+        console.log('📋 Media format:', msg.start?.media_format);
+        
+      } else if (msg.event === 'media' && msg.media?.payload) {
+        // Convert μ-law @ 8kHz → PCM16 @ 24kHz for OpenAI
+        const rtpPayload = Buffer.from(msg.media.payload, 'base64'); // μ-law @ 8kHz
+        const pcm16_8k = mulawToPCM16(rtpPayload);                    // decode μ-law → PCM16
+        const pcm16_24k = resampleLinearPCM16(pcm16_8k, 8000, 24000); // 8k → 24k
+        
+        if (oai.readyState === 1) { // WebSocket.OPEN
+          oai.send(JSON.stringify({
+            type: 'input_audio_buffer.append',
+            audio: pcm16_24k.toString('base64')
+          }));
+        }
+        
+      } else if (msg.event === 'stop') {
+        console.log('🛑 Telnyx media stream stopped');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error processing Telnyx message:', error);
+    }
+  }
+});
 
 // Start server
 const start = async () => {
   try {
-    await fastify.listen({ port: PORT, host: '0.0.0.0' });
-    console.log(`🚀 Server ξεκίνησε στο http://localhost:${PORT}`);
-    console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-    console.log(`🧪 Test OpenAI: http://localhost:${PORT}/test-openai`);
-    console.log(`📞 Telnyx Webhook: ${BASE_URL}/telnyx-webhook`);
-    console.log(`🎵 Media Stream: ${BASE_URL.replace('https://', 'wss://')}/media-stream`);
-    console.log('🎉 PELAGOS VOICE AGENT ΜΕ OPENAI REALTIME API ΞΕΚΙΝΗΣΕ! 🎉');
-    console.log('🍽️ Έτοιμος για ελληνικές κλήσεις! 🇬🇷');
+    await fastify.listen({ port: PORT, host: HOST });
+    console.log(`🚀 Spotzy AI Voice Agent running on ${HOST}:${PORT}`);
   } catch (err) {
-    console.error('❌ Σφάλμα κατά την εκκίνηση:', err);
+    fastify.log.error(err);
     process.exit(1);
   }
 };
