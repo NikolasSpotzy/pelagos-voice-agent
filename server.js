@@ -142,7 +142,7 @@ function resampleLinearPCM16(input, inRate, outRate) {
 // WebSocket endpoint - registered as separate plugin to avoid CORS conflicts
 fastify.register(async function (fastify) {
   fastify.get('/media-stream', { websocket: true }, (connection, req) => {
-    const socket = connection.socket;
+    const socket = connection;
     console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
     console.log('🌐 Connection from:', req.ip || req.hostname || 'unknown');
 
