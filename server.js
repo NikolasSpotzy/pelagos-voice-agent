@@ -80,7 +80,7 @@ fastify.post('/telnyx-webhook', async (request, reply) => {
           stream_url: streamUrl,
           stream_track: 'both_tracks',
           stream_bidirectional_mode: "rtp",
-          stream_bidirectional_codec: "PCMU",
+          stream_bidirectional_codec: "PCMA",
           stream_bidirectional_target_legs: "opposite"
         })
       });
@@ -179,8 +179,8 @@ fastify.register(async function (fastify) {
             turn_detection: { type: 'server_vad' },
             voice: 'alloy',
             input_audio_transcription: { model: 'whisper-1' },
-            input_audio_format: 'g711_ulaw',    // ✅ SAME AS TELNYX!
-            output_audio_format: 'g711_ulaw',   // ✅ SAME AS TELNYX!
+            input_audio_format: 'g711_alaw',    // ✅ SAME AS TELNYX!
+            output_audio_format: 'g711_alaw',   // ✅ SAME AS TELNYX!
             instructions: `Είσαι η Μαρία, η AI hostess του εστιατορίου Πέλαγος στη Λεμεσό. 
             Μιλάς μόνο ελληνικά με φιλικό και επαγγελματικό τρόπο. 
             Βοηθάς με κρατήσεις τραπεζιών και πληροφορίες για το εστιατόριο.
