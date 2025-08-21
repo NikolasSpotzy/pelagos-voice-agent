@@ -142,7 +142,7 @@ function resampleLinearPCM16(input, inRate, outRate) {
 // WebSocket endpoint - registered as separate plugin to avoid CORS conflicts
 fastify.register(async function (fastify) {
   fastify.get('/media-stream', { websocket: true }, (connection, req) => {
-    const socket = connection;
+    const socket = connection; // ✅ FIXED: Direct connection, not connection.socket
     console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
     console.log('🌐 Connection from:', req.ip || req.hostname || 'unknown');
 
@@ -161,13 +161,13 @@ fastify.register(async function (fastify) {
       }
     }, 25000);
 
-    // 3) Connect to OpenAI Realtime
+    // 3) Connect to OpenAI Realtime with LATEST MODEL and REQUIRED HEADERS
     const oai = new WebSocket(
-      'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01',
+      'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17', // ✅ UPDATED MODEL
       { 
         headers: { 
           'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'OpenAI-Beta': 'realtime=v1' 
+          'OpenAI-Beta': 'realtime=v1' // ✅ REQUIRED HEADER
         } 
       }
     );
@@ -175,11 +175,11 @@ fastify.register(async function (fastify) {
     oai.on('open', () => {
       console.log('🤖 Συνδέθηκε στο OpenAI Realtime API');
       
-      // Configure session
+      // ✅ IMPROVED: Configure session with proper settings
       oai.send(JSON.stringify({
         type: 'session.update',
         session: {
-          turn_detection: { type: 'server_vad' },
+          turn_detection: { type: 'server_vad' }, // ✅ Keep VAD for natural conversation
           input_audio_format: 'pcm16',
           input_audio_transcription: { model: 'whisper-1' },
           output_audio_format: 'g711_ulaw',
@@ -188,9 +188,35 @@ fastify.register(async function (fastify) {
           instructions: `Είσαι η Μαρία, η AI hostess του εστιατορίου Πέλαγος στη Λεμεσό. 
           Μιλάς μόνο ελληνικά με φιλικό και επαγγελματικό τρόπο. 
           Βοηθάς με κρατήσεις τραπεζιών και πληροφορίες για το εστιατόριο.
-          Χαιρέτα τους πελάτες και ρώτα πώς μπορείς να τους βοηθήσεις.`
+          ΣΗΜΑΝΤΙΚΟ: Μόλις ξεκινήσει η κλήση, χαιρέτα αμέσως τον καλούντα και ρώτα πώς μπορείς να τον βοηθήσεις.`
         }
       }));
+      
+      // ✅ NEW: Trigger immediate greeting
+      setTimeout(() => {
+        if (oai.readyState === 1) {
+          console.log('🎤 Triggering initial greeting from Μαρία');
+          oai.send(JSON.stringify({
+            type: 'conversation.item.create',
+            item: {
+              type: 'message',
+              role: 'user',
+              content: [{ 
+                type: 'input_text', 
+                text: 'Γεια σας, μόλις συνδεθήκατε στο εστιατόριο Πέλαγος' 
+              }]
+            }
+          }));
+          
+          oai.send(JSON.stringify({
+            type: 'response.create',
+            response: {
+              modalities: ['audio'],
+              instructions: 'Χαιρέτησε φιλικά τον καλούντα και παρουσιάσου ως Μαρία από το εστιατόριο Πέλαγος. Ρώτα πώς μπορείς να τον βοηθήσεις.'
+            }
+          }));
+        }
+      }, 1500); // ✅ Wait for connection to stabilize
     });
 
     // OpenAI → Telnyx (audio out)  
@@ -225,6 +251,8 @@ fastify.register(async function (fastify) {
           console.log('💬 OpenAI response started');
         } else if (message.type === 'response.done') {
           console.log('✅ OpenAI response completed');
+        } else if (message.type === 'conversation.item.created') {
+          console.log('📝 Conversation item created');
         }
         
       } catch (error) {
