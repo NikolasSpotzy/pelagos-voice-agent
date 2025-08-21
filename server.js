@@ -66,7 +66,7 @@ fastify.post('/telnyx-webhook', async (request, reply) => {
     // Start media streaming
     setTimeout(async () => {
       console.log('🎵 Έναρξη audio session με OpenAI για κλήση:', data.payload.call_control_id);
-      const streamUrl = `wss://${request.headers.host}/media-stream`;
+      const streamUrl = `wss://pelagos-voice-agent.onrender.com/media-stream`;
       console.log('🎵 Stream URL:', streamUrl);
       
       try {
@@ -79,9 +79,8 @@ fastify.post('/telnyx-webhook', async (request, reply) => {
           body: JSON.stringify({
   stream_url: streamUrl,
   stream_track: 'both_tracks',
-  // ✅ ΤΑ ΚΡΙΣΙΜΑ ΠΕΔΙΑ ΠΟΥ ΛΕΙΠΟΥΝ:
   stream_bidirectional_mode: "rtp",
-  stream_bidirectional_codec: "PCMU", 
+  stream_bidirectional_codec: "PCMU",
   stream_bidirectional_target_legs: "opposite"
 })
         });
