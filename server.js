@@ -257,13 +257,21 @@ fastify.register(async function (fastify) {
       const elapsedMs = (latestMediaTimestamp || 0) - (responseStartTimestamp || 0);
       const audio_end_ms = elapsedMs > 0 ? elapsedMs : 0;
 
-      if (openaiWs && openaiWs.readyState === 1) {
-        openaiWs.send(JSON.stringify({
-          type: 'conversation.item.truncate',
-          item_id: lastAssistantItem,
-          content_index: 0,
-          audio_end_ms
-        }));
+     // ✅ DIRECT AUDIO TRANSFER with manual commits
+if (openaiWs && openaiWs.readyState === 1) {
+  openaiWs.send(JSON.stringify({
+    type: 'input_audio_buffer.append',
+    audio: msg.media.payload
+  }));
+  
+  // Manual commit every 20 packets (like Twilio demo)
+  if (latestMediaTimestamp % 320 === 0) {
+    openaiWs.send(JSON.stringify({
+      type: 'input_audio_buffer.commit'
+    }));
+    console.log('✅ Committed audio buffer');
+  }
+}
       }
 
       if (socket.readyState === 1 && streamSid) {
