@@ -77,9 +77,13 @@ fastify.post('/telnyx-webhook', async (request, reply) => {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            stream_url: streamUrl,
-            stream_track: 'both_tracks'
-          })
+  stream_url: streamUrl,
+  stream_track: 'both_tracks',
+  // ✅ ΤΑ ΚΡΙΣΙΜΑ ΠΕΔΙΑ ΠΟΥ ΛΕΙΠΟΥΝ:
+  stream_bidirectional_mode: "rtp",
+  stream_bidirectional_codec: "PCMU", 
+  stream_bidirectional_target_legs: "opposite"
+})
         });
         
         if (streamResponse.ok) {
