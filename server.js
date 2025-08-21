@@ -140,7 +140,8 @@ function resampleLinearPCM16(input, inRate, outRate) {
 }
 
 // CORRECT WebSocket handler with audio conversion
-fastify.get('/media-stream', { websocket: true }, (socket, req) => {
+fastify.get('/media-stream', { websocket: true }, (connection, req) => {
+  const socket = connection.socket;
   console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
   console.log('🌐 Connection from:', req.ip || req.hostname || 'unknown');
 
