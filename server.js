@@ -60,40 +60,40 @@ fastify.post('/telnyx-webhook', async (request, reply) => {
       console.error('❌ Error answering call:', error);
     }
     
-  } else if (data.event_type === 'call.answered') {
-    console.log('📞 Κλήση απαντήθηκε:', data.payload.call_control_id);
+ } else if (data.event_type === 'call.answered') {
+  console.log('📞 Κλήση απαντήθηκε:', data.payload.call_control_id);
+  
+  // Start media streaming
+  setTimeout(async () => {
+    console.log('🎵 Έναρξη audio session με OpenAI για κλήση:', data.payload.call_control_id);
+    const streamUrl = `wss://pelagos-voice-agent.onrender.com/media-stream`;
+    console.log('🎵 Stream URL:', streamUrl);
     
-    // Start media streaming
-    setTimeout(async () => {
-      console.log('🎵 Έναρξη audio session με OpenAI για κλήση:', data.payload.call_control_id);
-      const streamUrl = `wss://pelagos-voice-agent.onrender.com/media-stream`;
-      console.log('🎵 Stream URL:', streamUrl);
+    try {
+      const streamResponse = await fetch(`https://api.telnyx.com/v2/calls/${data.payload.call_control_id}/actions/streaming_start`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.TELNYX_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          stream_url: streamUrl,
+          stream_track: 'both_tracks',
+          stream_bidirectional_mode: "rtp",
+          stream_bidirectional_codec: "PCMU",
+          stream_bidirectional_target_legs: "opposite"
+        })
+      });
       
-      try {
-        const streamResponse = await fetch(`https://api.telnyx.com/v2/calls/${data.payload.call_control_id}/actions/streaming_start`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.TELNYX_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-  stream_url: streamUrl,
-  stream_track: 'both_tracks',
-  stream_bidirectional_mode: "rtp",
-  stream_bidirectional_codec: "PCMU",
-  stream_bidirectional_target_legs: "opposite"
-})
-        });
-        
-        if (streamResponse.ok) {
-          console.log('✅ Media streaming ξεκίνησε επιτυχώς');
-        } else {
-          console.error('❌ Failed to start streaming:', await streamResponse.text());
-        }
-      } catch (error) {
-        console.error('❌ Error starting stream:', error);
+      if (streamResponse.ok) {
+        console.log('✅ Media streaming ξεκίνησε επιτυχώς');
+      } else {
+        console.error('❌ Failed to start streaming:', await streamResponse.text());
       }
-    }, 1000);
+    } catch (error) {
+      console.error('❌ Error starting stream:', error);
+    }
+  }, 1000);
     
   } else if (data.event_type === 'streaming.failed') {
     console.log('❌ Media streaming απέτυχε:', data.payload.call_control_id);
