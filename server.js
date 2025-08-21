@@ -122,22 +122,25 @@ function mulawToPCM16(mu) {
   return out;
 }
 
-function resampleLinearPCM16(input, inRate, outRate) {
-  if (inRate === outRate) return input;
-  const inSamples = input.length / 2;
-  const outSamples = Math.round(inSamples * outRate / inRate);
-  const out = Buffer.alloc(outSamples * 2);
-  for (let i = 0; i < outSamples; i++) {
-    const t = i * (inSamples - 1) / (outSamples - 1);
-    const i0 = Math.floor(t), i1 = Math.min(i0 + 1, inSamples - 1);
-    const frac = t - i0;
-    const s0 = input.readInt16LE(i0 * 2);
-    const s1 = input.readInt16LE(i1 * 2);
-    const s = (1 - frac) * s0 + frac * s1;
-    out.writeInt16LE(Math.max(-32768, Math.min(32767, s | 0)), i * 2);
+  function resampleLinearPCM16(input, inRate, outRate) {
+    if (inRate === outRate) return input;
+    const inSamples = input.length / 2;
+    const outSamples = Math.round(inSamples * outRate / inRate);
+    if (inSamples < 2 || outSamples < 2) {
+      return Buffer.alloc(outSamples * 2);
+    }
+    const out = Buffer.alloc(outSamples * 2);
+    for (let i = 0; i < outSamples; i++) {
+      const t = i * (inSamples - 1) / (outSamples - 1);
+      const i0 = Math.floor(t), i1 = Math.min(i0 + 1, inSamples - 1);
+      const frac = t - i0;
+      const s0 = input.readInt16LE(i0 * 2);
+      const s1 = input.readInt16LE(i1 * 2);
+      const s = (1 - frac) * s0 + frac * s1;
+      out.writeInt16LE(Math.max(-32768, Math.min(32767, s | 0)), i * 2);
+    }
+    return out;
   }
-  return out;
-}
 
 // WebSocket endpoint - registered as separate plugin to avoid CORS conflicts
 fastify.register(async function (fastify) {
