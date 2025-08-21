@@ -153,12 +153,13 @@ fastify.get('/media-stream', { websocket: true }, (connection, req) => {
 
   // 2) Keepalive to avoid idle drops
   const ping = setInterval(() => { 
-    try { 
-      socket.ping(); 
-    } catch (e) {
-      console.log('Ping failed:', e.message);
-    }
-  }, 25000);
+  try { 
+    // socket.ping(); // Commented out - not supported in Fastify
+    console.log('💓 Keepalive check');
+  } catch (e) {
+    console.log('Ping failed:', e.message);
+  }
+}, 25000);
 
   // 3) Connect to OpenAI Realtime
   const oai = new WebSocket(
