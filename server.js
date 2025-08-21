@@ -149,7 +149,7 @@ fastify.register(async function (fastify) {
 
     function connectToOpenAI() {
       openaiWs = new WebSocket(
-        'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17',
+        'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview',
         {
           headers: {
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -165,11 +165,11 @@ fastify.register(async function (fastify) {
           type: 'session.update',
           session: {
             modalities: ['text', 'audio'],
-            turn_detection: null,
+            turn_detection: { type: 'server_vad' },
             voice: 'alloy',
             input_audio_transcription: { model: 'whisper-1' },
-            input_audio_format: 'g711_alaw',
-            output_audio_format: 'g711_alaw',
+            input_audio_format: 'g711_ulaw',
+            output_audio_format: 'g711_ulaw',
             instructions: `Είσαι η Μαρία, η AI hostess του εστιατορίου Πέλαγος στη Λεμεσό. 
             Μιλάς μόνο ελληνικά με φιλικό και επαγγελματικό τρόπο. 
             Βοηθάς με κρατήσεις τραπεζιών και πληροφορίες για το εστιατόριο.
