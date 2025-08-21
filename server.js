@@ -139,141 +139,141 @@ function resampleLinearPCM16(input, inRate, outRate) {
   return out;
 }
 
-// CORRECT WebSocket handler with audio conversion
+// WebSocket endpoint - registered as separate plugin to avoid CORS conflicts
 fastify.register(async function (fastify) {
   fastify.get('/media-stream', { websocket: true }, (connection, req) => {
-  const socket = connection.socket;
-  console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
-  console.log('🌐 Connection from:', req.ip || req.hostname || 'unknown');
+    const socket = connection.socket;
+    console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
+    console.log('🌐 Connection from:', req.ip || req.hostname || 'unknown');
 
+    // 1) Attach listeners SYNCHRONOUSLY
+    socket.on('message', onTelnyxMessage);
+    socket.on('close', () => cleanup('telnyx closed'));
+    socket.on('error', (e) => console.error('❌ Telnyx WS error', e));
 
-  // 1) Attach listeners SYNCHRONOUSLY
-  socket.on('message', onTelnyxMessage);
-  socket.on('close', () => cleanup('telnyx closed'));
-  socket.on('error', (e) => console.error('❌ Telnyx WS error', e));
-
-  // 2) Keepalive to avoid idle drops
-  const ping = setInterval(() => { 
-  try { 
-    // socket.ping(); // Commented out - not supported in Fastify
-    console.log('💓 Keepalive check');
-  } catch (e) {
-    console.log('Ping failed:', e.message);
-  }
-}, 25000);
-
-  // 3) Connect to OpenAI Realtime
-  const oai = new WebSocket(
-    'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01',
-    { 
-      headers: { 
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'realtime=v1' 
-      } 
-    }
-  );
-
-  oai.on('open', () => {
-    console.log('🤖 Συνδέθηκε στο OpenAI Realtime API');
-    
-    // Configure session
-    oai.send(JSON.stringify({
-      type: 'session.update',
-      session: {
-        turn_detection: { type: 'server_vad' },
-        input_audio_format: 'pcm16',
-        input_audio_transcription: { model: 'whisper-1' },
-        output_audio_format: 'g711_ulaw',
-        modalities: ['audio', 'text'],
-        voice: 'alloy',
-        instructions: `Είσαι η Μαρία, η AI hostess του εστιατορίου Πέλαγος στη Λεμεσό. 
-        Μιλάς μόνο ελληνικά με φιλικό και επαγγελματικό τρόπο. 
-        Βοηθάς με κρατήσεις τραπεζιών και πληροφορίες για το εστιατόριο.
-        Χαιρέτα τους πελάτες και ρώτα πώς μπορείς να τους βοηθήσεις.`
+    // 2) Keepalive to avoid idle drops
+    const ping = setInterval(() => { 
+      try { 
+        // socket.ping(); // Commented out - not supported in Fastify
+        console.log('💓 Keepalive check');
+      } catch (e) {
+        console.log('Ping failed:', e.message);
       }
-    }));
-  });
+    }, 25000);
 
-  // OpenAI → Telnyx (audio out)  
-  let outBuffer = Buffer.alloc(0);
-  oai.on('message', (buf) => {
-    try {
-      const message = JSON.parse(buf.toString());
+    // 3) Connect to OpenAI Realtime
+    const oai = new WebSocket(
+      'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01',
+      { 
+        headers: { 
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'OpenAI-Beta': 'realtime=v1' 
+        } 
+      }
+    );
+
+    oai.on('open', () => {
+      console.log('🤖 Συνδέθηκε στο OpenAI Realtime API');
       
-      if (message.type === 'response.audio.delta' && message.delta) {
-        // message.delta is base64 g711_ulaw
-        outBuffer = Buffer.concat([outBuffer, Buffer.from(message.delta, 'base64')]);
+      // Configure session
+      oai.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          turn_detection: { type: 'server_vad' },
+          input_audio_format: 'pcm16',
+          input_audio_transcription: { model: 'whisper-1' },
+          output_audio_format: 'g711_ulaw',
+          modalities: ['audio', 'text'],
+          voice: 'alloy',
+          instructions: `Είσαι η Μαρία, η AI hostess του εστιατορίου Πέλαγος στη Λεμεσό. 
+          Μιλάς μόνο ελληνικά με φιλικό και επαγγελματικό τρόπο. 
+          Βοηθάς με κρατήσεις τραπεζιών και πληροφορίες για το εστιατόριο.
+          Χαιρέτα τους πελάτες και ρώτα πώς μπορείς να τους βοηθήσεις.`
+        }
+      }));
+    });
+
+    // OpenAI → Telnyx (audio out)  
+    let outBuffer = Buffer.alloc(0);
+    oai.on('message', (buf) => {
+      try {
+        const message = JSON.parse(buf.toString());
         
-        // Send back to Telnyx in 20ms chunks (160 bytes for PCMU @ 8kHz)
-        while (outBuffer.length >= 160) {
-          const frame = outBuffer.subarray(0, 160);
-          outBuffer = outBuffer.subarray(160);
+        if (message.type === 'response.audio.delta' && message.delta) {
+          // message.delta is base64 g711_ulaw
+          outBuffer = Buffer.concat([outBuffer, Buffer.from(message.delta, 'base64')]);
           
-          if (socket.readyState === 1) { // WebSocket.OPEN
-            socket.send(JSON.stringify({ 
-              event: 'media', 
-              media: { 
-                payload: frame.toString('base64') 
-              } 
-            }));
+          // Send back to Telnyx in 20ms chunks (160 bytes for PCMU @ 8kHz)
+          while (outBuffer.length >= 160) {
+            const frame = outBuffer.subarray(0, 160);
+            outBuffer = outBuffer.subarray(160);
+            
+            if (socket.readyState === 1) { // WebSocket.OPEN
+              socket.send(JSON.stringify({ 
+                event: 'media', 
+                media: { 
+                  payload: frame.toString('base64') 
+                } 
+              }));
+            }
           }
         }
-      }
-      
-      if (message.type === 'session.created') {
-        console.log('✅ OpenAI session created');
-      } else if (message.type === 'response.created') {
-        console.log('💬 OpenAI response started');
-      } else if (message.type === 'response.done') {
-        console.log('✅ OpenAI response completed');
-      }
-      
-    } catch (error) {
-      console.error('❌ Error processing OpenAI message:', error);
-    }
-  });
-
-  oai.on('close', () => cleanup('oai closed'));
-  oai.on('error', (e) => console.error('❌ OpenAI WS error', e));
-
-  function cleanup(reason) {
-    clearInterval(ping);
-    try { socket.terminate(); } catch (e) {}
-    try { oai.terminate(); } catch (e) {}
-    console.log('🧹 Cleanup:', reason);
-  }
-
-  // Telnyx → OpenAI (audio in)
-  function onTelnyxMessage(data) {
-    try {
-      const msg = JSON.parse(data.toString());
-      
-      if (msg.event === 'start') {
-        console.log('🎬 Telnyx media stream started');
-        console.log('📋 Media format:', msg.start?.media_format);
         
-      } else if (msg.event === 'media' && msg.media?.payload) {
-        // Convert μ-law @ 8kHz → PCM16 @ 24kHz for OpenAI
-        const rtpPayload = Buffer.from(msg.media.payload, 'base64'); // μ-law @ 8kHz
-        const pcm16_8k = mulawToPCM16(rtpPayload);                    // decode μ-law → PCM16
-        const pcm16_24k = resampleLinearPCM16(pcm16_8k, 8000, 24000); // 8k → 24k
-        
-        if (oai.readyState === 1) { // WebSocket.OPEN
-          oai.send(JSON.stringify({
-            type: 'input_audio_buffer.append',
-            audio: pcm16_24k.toString('base64')
-          }));
+        if (message.type === 'session.created') {
+          console.log('✅ OpenAI session created');
+        } else if (message.type === 'response.created') {
+          console.log('💬 OpenAI response started');
+        } else if (message.type === 'response.done') {
+          console.log('✅ OpenAI response completed');
         }
         
-      } else if (msg.event === 'stop') {
-        console.log('🛑 Telnyx media stream stopped');
+      } catch (error) {
+        console.error('❌ Error processing OpenAI message:', error);
       }
-      
-    } catch (error) {
-      console.error('❌ Error processing Telnyx message:', error);
+    });
+
+    oai.on('close', () => cleanup('oai closed'));
+    oai.on('error', (e) => console.error('❌ OpenAI WS error', e));
+
+    function cleanup(reason) {
+      clearInterval(ping);
+      try { socket.terminate(); } catch (e) {}
+      try { oai.terminate(); } catch (e) {}
+      console.log('🧹 Cleanup:', reason);
     }
-  }
-});
+
+    // Telnyx → OpenAI (audio in)
+    function onTelnyxMessage(data) {
+      try {
+        const msg = JSON.parse(data.toString());
+        
+        if (msg.event === 'start') {
+          console.log('🎬 Telnyx media stream started');
+          console.log('📋 Media format:', msg.start?.media_format);
+          
+        } else if (msg.event === 'media' && msg.media?.payload) {
+          // Convert μ-law @ 8kHz → PCM16 @ 24kHz for OpenAI
+          const rtpPayload = Buffer.from(msg.media.payload, 'base64'); // μ-law @ 8kHz
+          const pcm16_8k = mulawToPCM16(rtpPayload);                    // decode μ-law → PCM16
+          const pcm16_24k = resampleLinearPCM16(pcm16_8k, 8000, 24000); // 8k → 24k
+          
+          if (oai.readyState === 1) { // WebSocket.OPEN
+            oai.send(JSON.stringify({
+              type: 'input_audio_buffer.append',
+              audio: pcm16_24k.toString('base64')
+            }));
+          }
+          
+        } else if (msg.event === 'stop') {
+          console.log('🛑 Telnyx media stream stopped');
+        }
+        
+      } catch (error) {
+        console.error('❌ Error processing Telnyx message:', error);
+      }
+    }
+  });
+}); // ✅ ΚΡΙΣΙΜΗ ΠΡΟΣΘΗΚΗ: Κλείσιμο του fastify.register block
 
 // Start server
 const start = async () => {
