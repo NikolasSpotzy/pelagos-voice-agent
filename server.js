@@ -28,7 +28,7 @@ fastify.get('/', async (request, reply) => {
   return { 
     message: 'Spotzy AI Voice Agent Server',
     status: 'running',
-    environment: 'Render',
+    environment: 'Railway',
     timestamp: new Date().toISOString()
   };
 });
@@ -64,7 +64,8 @@ fastify.post('/telnyx-webhook', async (request, reply) => {
     
     setTimeout(async () => {
       console.log('🎵 Έναρξη audio session με OpenAI για κλήση:', data.payload.call_control_id);
-      const streamUrl = `wss://pelagos-voice-agent.onrender.com/media-stream`;
+      // ✅ ΑΛΛΑΓΗ: Διόρθωση URL για Railway deployment
+      const streamUrl = `wss://your-railway-app-domain.railway.app/media-stream`;
       console.log('🎵 Stream URL:', streamUrl);
       
       try {
@@ -78,7 +79,8 @@ fastify.post('/telnyx-webhook', async (request, reply) => {
             stream_url: streamUrl,
             stream_track: 'both_tracks',
             stream_bidirectional_mode: "rtp",
-            stream_bidirectional_codec: "PCMA",
+            // ✅ ΑΛΛΑΓΗ: Χρήση PCMU για συμβατότητα με g711_ulaw
+            stream_bidirectional_codec: "PCMU",
             stream_bidirectional_target_legs: "opposite"
           })
         });
@@ -105,10 +107,11 @@ fastify.post('/telnyx-webhook', async (request, reply) => {
   reply.send({ received: true });
 });
 
-// WebSocket endpoint
+// WebSocket endpoint - ✅ ΚΥΡΙΑ ΑΛΛΑΓΗ
 fastify.register(async function (fastify) {
   fastify.get('/media-stream', { websocket: true }, (connection, req) => {
-    const socket = connection;
+    // ✅ ΑΛΛΑΓΗ: Χρήση connection.socket αντί για connection
+    const socket = connection.socket;
     console.log('🎵 Νέα WebSocket σύνδεση για media streaming');
     console.log('🌐 Connection from:', req.ip || req.hostname || 'unknown');
 
@@ -165,9 +168,11 @@ fastify.register(async function (fastify) {
           type: 'session.update',
           session: {
             modalities: ['text', 'audio'],
+            // ✅ ΑΛΛΑΓΗ: Χρήση server_vad αντί για null
             turn_detection: { type: 'server_vad' },
             voice: 'alloy',
             input_audio_transcription: { model: 'whisper-1' },
+            // ✅ ΑΛΛΑΓΗ: Συμβατότητα codecs
             input_audio_format: 'g711_ulaw',
             output_audio_format: 'g711_ulaw',
             instructions: `Είσαι η Μαρία, η AI hostess του εστιατορίου Πέλαγος στη Λεμεσό. 
@@ -177,19 +182,8 @@ fastify.register(async function (fastify) {
           }
         }));
         
-        // Manual response trigger after 2 seconds
-        setTimeout(() => {
-          if (openaiWs && openaiWs.readyState === 1) {
-            console.log('🎤 Manual response trigger');
-            openaiWs.send(JSON.stringify({
-              type: 'response.create',
-              response: {
-                modalities: ['audio'],
-                instructions: 'Πες: "Γεια σας, είμαι η Μαρία από το εστιατόριο Πέλαγος. Πώς μπορώ να σας βοηθήσω;"'
-              }
-            }));
-          }
-        }, 2000);
+        // ✅ ΑΛΛΑΓΗ: Αφαίρεση manual trigger - Server VAD θα χειριστεί τις απαντήσεις
+        // Το manual trigger αφαιρέθηκε γιατί το server_vad θα ξεκινάει αυτόματα τις απαντήσεις
       });
 
       openaiWs.on('message', (data) => {
@@ -214,6 +208,10 @@ fastify.register(async function (fastify) {
             console.log('💬 OpenAI response started');
           } else if (event.type === 'response.done') {
             console.log('✅ OpenAI response completed');
+          } else if (event.type === 'input_audio_buffer.speech_started') {
+            console.log('🗣️ User started speaking');
+          } else if (event.type === 'input_audio_buffer.speech_stopped') {
+            console.log('🔇 User stopped speaking');
           }
           
         } catch (error) {
@@ -250,6 +248,23 @@ fastify.register(async function (fastify) {
     socket.on('error', (error) => {
       console.error('❌ Telnyx WS error:', error);
       cleanup();
+    });
+
+    // ✅ ΑΛΛΑΓΗ: Διορθωμένο ping loop με έλεγχο
+    const ping = setInterval(() => {
+      if (socket && typeof socket.ping === 'function' && socket.readyState === 1) {
+        try {
+          socket.ping();
+          console.log('🔄 WebSocket ping sent');
+        } catch (error) {
+          console.error('❌ Ping error:', error);
+        }
+      }
+    }, 25000);
+
+    // Cleanup ping interval when socket closes
+    socket.on('close', () => {
+      clearInterval(ping);
     });
   });
 });
